@@ -58,6 +58,19 @@ class TestLine(unittest.TestCase):
         self.assertLess(max_err, 0.02, f"Distribution mismatch (clamped): {max_err}")
 
 
+class TestGraphLeaves(unittest.TestCase):
+    def test_the_graph_adds_a_fixed_number_of_leaves(self):
+        """Every filter_jit call flattens its arguments, so leaves must not grow with the graph."""
+
+        def program(n):
+            nodes = [SpinNode() for _ in range(n)]
+            edges = list(zip(nodes[:-1], nodes[1:]))
+            model = IsingEBM(nodes, edges, jnp.zeros(n), jnp.zeros(n - 1), jnp.array(1.0))
+            return IsingSamplingProgram(model, [Block(nodes[::2]), Block(nodes[1::2])], [])
+
+        self.assertEqual(len(jax.tree.leaves(program(4))), len(jax.tree.leaves(program(400))))
+
+
 def _random_complete_graph(key, dim):
     key, subkey = jax.random.split(key, 2)
     weight_matrix = jax.random.uniform(subkey, shape=(dim, dim), minval=-0.6, maxval=0.6)
