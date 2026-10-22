@@ -376,10 +376,10 @@ def test_training_layout_covers_unrequested_model_nodes(kind):
     spec, extra = case["training_spec"], SpinNode()
     model = spec.ebm
     if kind == "bias":
-        model = eqx.tree_at(lambda m: (m.nodes, m.biases), model, (model.nodes + [extra], jnp.zeros(6)))
+        model = eqx.tree_at(lambda m: (m.nodes, m.biases), model, ([*model.nodes, extra], jnp.zeros(6)))
     else:
         model = eqx.tree_at(
-            lambda m: (m.edges, m.weights), model, (model.edges + [(model.nodes[0], extra)], jnp.zeros(4))
+            lambda m: (m.edges, m.weights), model, ([*model.edges, (model.nodes[0], extra)], jnp.zeros(4))
         )
     backend = SerialBackend()
     with pytest.raises(ValueError, match="cover every model"):

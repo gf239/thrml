@@ -1,4 +1,4 @@
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 
 import equinox as eqx
 import jax
@@ -25,6 +25,25 @@ if TYPE_CHECKING:
 Edge = tuple[AbstractNode, AbstractNode]
 
 
+class _HashOnceTuple(tuple):
+    """A tuple that computes its hash once.
+
+    JAX treats it as one pytree leaf, so `eqx.filter_jit` hashes it as a single static
+    argument instead of flattening every node. The hash is cached for the same reason as
+    the hash of a `Block`: the graph may hold millions of nodes.
+    """
+
+    def __hash__(self) -> int:
+        cached = self.__dict__.get("_hash")
+        if cached is None:
+            cached = self.__dict__["_hash"] = tuple.__hash__(self)
+        return cached
+
+    def __reduce__(self):
+        # Rebuild without the cached hash, which need not hold in another process.
+        return type(self), (tuple(self),)
+
+
 class IsingEBM(AbstractFactorizedEBM):
     r"""An EBM with the energy function,
 
@@ -42,15 +61,18 @@ class IsingEBM(AbstractFactorizedEBM):
     - `weights`: the weight associated with each pair of nodes in `edges`.
     - `beta`: the scalar temperature parameter for the model.
 
+    `nodes` and `edges` are copied into tuples, and each is a single pytree leaf.
     """
 
-    nodes: list[AbstractNode]
+    nodes: tuple[AbstractNode, ...]
     biases: Array
-    edges: list[Edge]
+    edges: tuple[Edge, ...]
     weights: Array
     beta: Array
 
-    def __init__(self, nodes: list[AbstractNode], edges: list[Edge], biases: Array, weights: Array, beta: Array):
+    def __init__(
+        self, nodes: Sequence[AbstractNode], edges: Sequence[Edge], biases: Array, weights: Array, beta: Array
+    ):
         """Initialize an Ising EBM.
 
         **Arguments:**
@@ -66,8 +88,8 @@ class IsingEBM(AbstractFactorizedEBM):
 
         super().__init__(sd_map)
 
-        self.nodes = nodes
-        self.edges = edges
+        self.nodes = _HashOnceTuple(nodes)
+        self.edges = _HashOnceTuple(tuple(edge) for edge in edges)
         self.beta = beta
         self.weights = weights
         self.biases = biases
@@ -230,8 +252,8 @@ def _validate_moment_nodes(program, first_moment_nodes, second_moment_edges, nam
 
 def estimate_moments(
     key: Key[Array, ""],
-    first_moment_nodes: list[AbstractNode],
-    second_moment_edges: list[Edge],
+    first_moment_nodes: Sequence[AbstractNode],
+    second_moment_edges: Sequence[Edge],
     program: IsingSamplingProgram | BlockSamplingProgram,
     schedule: SamplingSchedule,
     init_state: list[Array] | None,
@@ -324,8 +346,8 @@ def _validate_training_state(
 def estimate_kl_grad(
     key: Key[Array, ""],
     training_spec: IsingTrainingSpec,
-    bias_nodes: list[AbstractNode],
-    weight_edges: list[Edge],
+    bias_nodes: Sequence[AbstractNode],
+    weight_edges: Sequence[Edge],
     data: list[Array],
     conditioning_values: list[Array],
     init_state_positive: list[Array] | None,
